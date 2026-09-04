@@ -1,0 +1,3 @@
+appName: envoy-gateway
+sourcePath: common-services/envoy-gateway
+destinationNamespace: envoy-gateway

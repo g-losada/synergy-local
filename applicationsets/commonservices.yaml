@@ -1,0 +1,54 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: common-services
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+
+  generators:
+    - git:
+        repoURL: https://synergy-infra.git.onstackit.cloud/hconceicao/synergy-k8s.git
+        revision: HEAD
+        files:
+          - path: "common-services/**/config.yaml"
+
+  template:
+    metadata:
+      name: "{{ .appName }}"
+      namespace: argocd
+      labels:
+        appset: "common-services"
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+
+    spec:
+      project: platform
+
+      source:
+        repoURL: https://synergy-infra.git.onstackit.cloud/hconceicao/synergy-k8s.git
+        targetRevision: HEAD
+        path: "{{ .sourcePath }}"
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{ .destinationNamespace }}"
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+
+        retry:
+          limit: 2
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m
+
+        syncOptions:
+          - CreateNamespace=true
+          - PrunePropagationPolicy=foreground
+          - ServerSideApply=true

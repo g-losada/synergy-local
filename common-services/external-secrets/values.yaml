@@ -1,0 +1,222 @@
+external-secrets:
+  installCRDs: true
+
+  replicaCount: 1
+
+  certController:
+    create: true
+  
+
+clusterSecretStore:
+  enabled: true
+  name: external-secrets-stackit
+
+  vault:
+    server: https://prod.sm.eu01.stackit.cloud
+
+    # Secrets Manager instance ID
+    path: "bb0c7f25-51fc-420d-9ae7-030232802211"
+
+    version: v2
+
+    appRole:
+      path: approle
+
+      credentialsSecret:
+        name: stackit-sm-approle
+        namespace: external-secrets
+        roleIdKey: role-id
+        secretIdKey: secret-id
+
+externalSecrets:
+  - enabled: true
+    name: harbor-admin
+
+    namespace: harbor
+
+    refreshInterval: 1m
+
+    secretStoreRef:
+      name: external-secrets-stackit
+
+    target:
+      name: harbor-admin
+    
+    data:
+      - secretKey: HARBOR_ADMIN_PASSWORD
+        remoteRef:
+          key: harbor/admin
+          property: HARBOR_ADMIN_PASSWORD
+  
+  - enabled: true
+    name: stackit-sa-authentication
+    namespace: cert-manager
+    refreshInterval: 1m
+    secretStoreRef:
+      name: external-secrets-stackit
+      kind: ClusterSecretStore
+    target:
+      name: stackit-sa-authentication
+      creationPolicy: Owner
+    data:
+      - secretKey: sa.json
+        remoteRef:
+          key: stackit-sa-authentication
+          property: sa.json
+
+#  - enabled: true
+#    name: gitlab-db-secret
+#
+#    namespace: cnpg-system
+#
+#    refreshInterval: 1m
+#
+#    secretStoreRef:
+#      name: external-secrets-aws
+#      kind: ClusterSecretStore
+#
+#    target:
+#      name: gitlab-db-secret
+#      creationPolicy: Owner
+#
+#    data:
+#      - secretKey: username
+#        remoteRef:
+#          key: k8s-dev/gitlab-db-secret
+#          property: username
+#
+#      - secretKey: password
+#        remoteRef:
+#          key: k8s-dev/gitlab-db-secret
+#          property: password
+#
+#  - enabled: true
+#    name: gitlab-db-secret
+#
+#    namespace: gitlab
+#
+#    refreshInterval: 1m
+#
+#    secretStoreRef:
+#      name: external-secrets-aws
+#      kind: ClusterSecretStore
+#
+#    target:
+#      name: gitlab-db-secret
+#      creationPolicy: Owner
+#
+#    data:
+#      - secretKey: username
+#        remoteRef:
+#          key: k8s-dev/gitlab-db-secret
+#          property: username
+#
+#      - secretKey: password
+#        remoteRef:
+#          key: k8s-dev/gitlab-db-secret
+#          property: password
+#
+#  - enabled: true
+#    name: gitlab-redis-secret
+#    namespace: gitlab
+#
+#    refreshInterval: 1m
+#
+#    secretStoreRef:
+#      name: external-secrets-aws
+#      kind: ClusterSecretStore
+#
+#    target:
+#      name: gitlab-redis-secret
+#      creationPolicy: Owner
+#
+#    data:
+#
+#      - secretKey: redis-password
+#        remoteRef:
+#          key: k8s-dev/redis-auth
+#          property: redis-password
+#  
+#  - enabled: true
+#    name: seaweedfs-s3-config
+#
+#    namespace: seaweedfs
+#
+#    refreshInterval: 1m
+#
+#    secretStoreRef:
+#      name: external-secrets-aws
+#      kind: ClusterSecretStore
+#
+#    target:
+#      name: seaweedfs-s3-config
+#      creationPolicy: Owner
+#
+#    data:
+#      - secretKey: s3.json
+#        remoteRef:
+#          key: k8s-dev/seaweedfs-s3-config
+#          property: s3.json
+#  
+#  - enabled: true
+#    name: gitlab-s3-connection
+#
+#    namespace: gitlab
+#
+#    refreshInterval: 1m
+#
+#    secretStoreRef:
+#      name: external-secrets-aws
+#      kind: ClusterSecretStore
+#
+#    target:
+#      name: gitlab-s3-connection
+#      creationPolicy: Owner
+#
+#    data:
+#      - secretKey: connection
+#        remoteRef:
+#          key: k8s-dev/gitlab-s3-connection
+#          property: connection
+#  
+#  - enabled: true
+#    name: gitlab-backup-storage-config
+#
+#    namespace: gitlab
+#
+#    refreshInterval: 1m
+#
+#    secretStoreRef:
+#      name: external-secrets-aws
+#      kind: ClusterSecretStore
+#
+#    target:
+#      name: gitlab-backup-storage-config
+#      creationPolicy: Owner
+#
+#    data:
+#      - secretKey: config
+#        remoteRef:
+#          key: k8s-dev/gitlab-backup-storage-config
+#          property: config
+#  
+#  - enabled: true
+#    name: gitlab-keycloak-connection
+#
+#    namespace: gitlab
+#
+#    refreshInterval: 1m
+#
+#    secretStoreRef:
+#      name: external-secrets-aws
+#      kind: ClusterSecretStore
+#
+#    target:
+#      name: gitlab-keycloak-connection
+#      creationPolicy: Owner
+#
+#    data:
+#      - secretKey: provider
+#        remoteRef:
+#          key: k8s-dev/gitlab-keycloak-connection
+#          property: provider

@@ -1,0 +1,27 @@
+{{- if .Values.gatewayApi.enabled }}
+{{- range .Values.gatewayApi.referenceGrants }}
+{{- if .create }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: ReferenceGrant
+metadata:
+  name: {{ .name }}
+  namespace: {{ default $.Release.Namespace .namespace }}
+spec:
+  from:
+    {{- range .from }}
+    - group: {{ .group }}
+      kind: {{ .kind }}
+      namespace: {{ default $.Release.Namespace .namespace }}
+    {{- end }}
+  to:
+    {{- range .to }}
+    - group: {{ .group | quote }}
+      kind: {{ .kind }}
+      {{- if .name }}
+      name: {{ .name }}
+      {{- end }}
+    {{- end }}
+---
+{{- end }}
+{{- end }}
+{{- end }}

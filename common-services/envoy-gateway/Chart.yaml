@@ -1,0 +1,10 @@
+apiVersion: v2
+name: envoy-gateway-wrapper
+description: A wrapper chart for Envoy Gateway 
+version: 0.1.0
+type: application
+
+dependencies:
+  - name: gateway-helm
+    version: v1.9.1
+    repository: oci://docker.io/envoyproxy

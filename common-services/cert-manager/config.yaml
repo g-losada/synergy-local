@@ -1,0 +1,3 @@
+appName: cert-manager
+sourcePath: common-services/cert-manager
+destinationNamespace: cert-manager

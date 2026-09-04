@@ -1,0 +1,12 @@
+apiVersion: v2
+name: argocd
+description: A wrapper chart for Argo CD
+type: application
+version: 0.1.0
+
+icon: https://argo-cd.readthedocs.io/en/stable/assets/logo.png
+
+dependencies:
+  - name: argo-cd
+    version: v10.4.1
+    repository: https://argoproj.github.io/argo-helm

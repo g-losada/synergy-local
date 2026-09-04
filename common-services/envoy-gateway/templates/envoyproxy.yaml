@@ -1,0 +1,9 @@
+{{- if and .Values.gatewayApi.enabled .Values.gatewayApi.envoyProxy.create }}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: {{ .Values.gatewayApi.envoyProxy.name }}
+  namespace: {{ default .Release.Namespace .Values.gatewayApi.envoyProxy.namespace }}
+spec:
+  {{- toYaml .Values.gatewayApi.envoyProxy.spec | nindent 2 }}
+{{- end }}

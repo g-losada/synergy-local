@@ -1,0 +1,13 @@
+apiVersion: v2
+name: cert-manager
+description: A wrapper chart for cert-manager
+type: application
+version: 0.1.0
+
+dependencies:
+  - name: cert-manager
+    version: v1.21.1
+    repository: https://charts.jetstack.io
+  - name: stackit-cert-manager-webhook
+    version: v0.5.0
+    repository: https://stackitcloud.github.io/stackit-cert-manager-webhook

@@ -1,0 +1,3 @@
+appName: external-secrets
+sourcePath: common-services/external-secrets
+destinationNamespace: external-secrets

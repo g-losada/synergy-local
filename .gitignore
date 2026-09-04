@@ -1,0 +1,63 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Temp files
+tmp/
+temp/
+*.tmp
+
+# Kubernetes secrets (DO NOT COMMIT)
+secrets/
+secret*.yaml
+secret*.yml
+repo-secret*.yaml
+repo-secret*.yml
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# SOPS
+*.dec.yaml
+*.dec.yml
+
+# Helm
+charts/**/charts/
+charts/**/tmpcharts/
+charts/**/.helmignore
+
+# Helm secrets plugin
+*.yaml.dec
+*.yml.dec
+
+# Kustomize build output
+build/
+dist/
+rendered/
+*.rendered.yaml
+
+# ArgoCD generated files
+.argocd-source.yaml
+
+# Environment files
+.env
+.env.*
+
+# Backup files
+*.bak
+*.backup
+
+# Generated kubeconfig
+kubeconfig
+kubeconfig.yaml

@@ -1,0 +1,122 @@
+project:
+  name: platform
+  namespace: argocd
+  description: Platform services
+
+  sourceRepos:
+    - https://synergy-infra.git.onstackit.cloud/hconceicao/synergy-k8s.git
+
+  destinations:
+    - namespace: "*"
+      server: https://kubernetes.default.svc
+
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+
+argo-cd:
+  global:
+    domain: argocd.synergy.runs.onstackit.cloud
+
+  configs:
+    params:
+    server.insecure: "true"
+  #  cm:
+  #    url: https://argocd.dev-dttsynergy.com
+  #    oidc.config: |
+  #      name: Keycloak
+  #      issuer: https://keycloak.dev-dttsynergy.com/realms/master
+  #      clientID: argocd
+  #    clientSecret: $oidc.keycloak.clientSecret        
+  #    requestedScopes:
+  #      - openid
+  #      - profile
+  #      - email
+  #      - groups
+  #
+  #  rbac:
+  #    policy.default: role:readonly
+  #    policy.csv: |
+  #      g, ArgoCDAdmins, role:admin
+  server:
+    replicas: 1
+    ingress:
+      enabled: false
+    service:
+      type: ClusterIP
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+
+  controller:
+    replicas: 1
+    
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+  repoServer:
+    replicas: 1
+    
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+  applicationSet:
+    replicas: 1
+   
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+
+  notifications:
+    enabled: true
+    replicas: 1
+    
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+
+  dex:
+    enabled: true
+    replicas: 1
+    
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+
+  redis:
+    enabled: true
+    serviceAccount:
+      create: true
+      name: argocd-redis
+      automountServiceAccountToken: true
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+    
+    persistence:
+      enabled: true
+      size: 8Gi
+
+  redis-ha:
+    enabled: false
+
+  ha:
+    enabled: false

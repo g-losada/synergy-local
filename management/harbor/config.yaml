@@ -1,0 +1,3 @@
+appName: harbor
+sourcePath: management/harbor
+destinationNamespace: harbor

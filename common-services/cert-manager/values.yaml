@@ -1,0 +1,42 @@
+cert-manager:
+  installCRDs: true
+  replicaCount: 1
+  webhook:
+    replicaCount: 1
+  cainjector:
+    replicaCount: 1
+
+stackit-cert-manager-webhook:
+  stackitSaAuthentication:
+    enabled: true 
+
+clusterIssuer:
+    enabled: true
+    name: letsencrypt-dns
+
+    email: hconceicao@deloitte.pt
+
+    # ✅ Start with staging to avoid rate limits (recommended)
+    #server: https://acme-staging-v02.api.letsencrypt.org/directory
+    server: https://acme-v02.api.letsencrypt.org/directory
+
+    privateKeySecretRef: letsencrypt-dns
+
+    webhook:
+      solverName: stackit
+      groupName: acme.stackit.de
+      config:
+        projectId: e063b730-b91e-46fa-bf26-0929dc012a33
+
+certificate:
+  create: true
+  name: gateway-cert
+  namespace: envoy-gateway
+  secretName: gateway-cert
+  issuerRef:
+    name: letsencrypt-dns
+    kind: ClusterIssuer
+  # commonName: dev-dttsynergy.com
+  dnsNames:
+    - harbor.synergy.runs.onstackit.cloud
+    - argocd.synergy.runs.onstackit.cloud
