@@ -4,7 +4,7 @@ project:
   description: Platform services
 
   sourceRepos:
-    - https://synergy-infra.git.onstackit.cloud/hconceicao/synergy-k8s.git
+    - https://github.com/g-losada/synergy-local.git
 
   destinations:
     - namespace: "*"
@@ -19,7 +19,7 @@ project:
       kind: "*"
 
 
-argo-cd:
+argocd:
   global:
     domain: argocd.synergy.runs.onstackit.cloud
 
