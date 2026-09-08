@@ -10,7 +10,7 @@ spec:
 
   generators:
     - git:
-        repoURL: https://synergy-infra.git.onstackit.cloud/hconceicao/synergy-k8s.git
+        repoURL: https://github.com/g-losada/synergy-local.git
         revision: HEAD
         files:
           - path: "common-services/**/config.yaml"
@@ -28,7 +28,7 @@ spec:
       project: platform
 
       source:
-        repoURL: https://synergy-infra.git.onstackit.cloud/hconceicao/synergy-k8s.git
+        repoURL: https://github.com/g-losada/synergy-local.git
         targetRevision: HEAD
         path: "{{ .sourcePath }}"
 

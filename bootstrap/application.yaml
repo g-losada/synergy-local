@@ -7,7 +7,7 @@ spec:
   project: platform
 
   source:
-    repoURL: https://synergy-infra.git.onstackit.cloud/hconceicao/synergy-k8s.git
+    repoURL: https://github.com/g-losada/synergy-local.git
     targetRevision: main
     path: applicationsets
 
