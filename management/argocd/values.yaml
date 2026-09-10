@@ -4,7 +4,7 @@ project:
   description: Platform services
 
   sourceRepos:
-    - https://github.com/g-losada/synergy-local.git
+    - https://synergy-infra.git.onstackit.cloud/hconceicao/synergy-k8s.git
 
   destinations:
     - namespace: "*"
@@ -19,14 +19,28 @@ project:
       kind: "*"
 
 
-argocd:
+argo-cd:
   global:
     domain: argocd.synergy.runs.onstackit.cloud
 
   configs:
-    params:
+  params:
     server.insecure: "true"
-  #  cm:
+  cm:
+    resource.customizations.health.k8ssandra.io_K8ssandraCluster: |
+      hs = {}
+      if obj.status ~= nil and obj.status.conditions ~= nil then
+        for i, condition in ipairs(obj.status.conditions) do
+          if condition.type == "Ready" and condition.status == "True" then
+            hs.status = "Healthy"
+            hs.message = "Cluster is ready"
+            return hs
+          end
+        end
+      end
+      hs.status = "Progressing"
+      hs.message = "Waiting for Cassandra datacenter to become ready"
+      return hs
   #    url: https://argocd.dev-dttsynergy.com
   #    oidc.config: |
   #      name: Keycloak

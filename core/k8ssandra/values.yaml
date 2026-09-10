@@ -1,0 +1,16 @@
+k8ssandra-operator:
+  replicaCount: 1
+
+cluster:
+  enabled: false        # arranca desligado no primeiro install
+  name: graph-cassandra
+  serverVersion: "4.1.4"
+  datacenters:
+    - name: dc1
+      size: 1
+      storageClassName: standard
+      storage: 5Gi
+      heapSize: 512M
+      stargate:
+        size: 1
+        heapSize: 256M

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: janus-graph
+description: A wrapper chart for JanusGraph
+type: application
+version: 0.1.0

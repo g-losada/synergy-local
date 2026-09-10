@@ -1,0 +1,32 @@
+{{- if .Values.cluster.enabled }}
+apiVersion: k8ssandra.io/v1alpha1
+kind: K8ssandraCluster
+metadata:
+  name: {{ .Values.cluster.name | default .Release.Name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"   # inerte sem ArgoCD, mas não faz mal deixar
+spec:
+  cassandra:
+    serverVersion: {{ .Values.cluster.serverVersion | quote }}
+    datacenters:
+      {{- range .Values.cluster.datacenters }}
+      - metadata:
+          name: {{ .name }}
+        size: {{ .size }}
+        storageConfig:
+          cassandraDataVolumeClaimSpec:
+            storageClassName: {{ .storageClassName | default "standard" }}
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: {{ .storage | default "5Gi" }}
+        config:
+          jvmOptions:
+            heapSize: {{ .heapSize | default "512M" }}
+        {{- if .stargate }}
+        stargate:
+          size: {{ .stargate.size | default 1 }}
+          heapSize: {{ .stargate.heapSize | default "256M" }}
+        {{- end }}
+      {{- end }}
+{{- end }}

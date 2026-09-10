@@ -1,0 +1,10 @@
+apiVersion: v2
+name: k8ssandra
+description: A wrapper chart for K8ssandra
+type: application
+version: 0.1.0
+
+dependencies:
+  - name: k8ssandra-operator
+    version: 1.30.2
+    repository: https://helm.k8ssandra.io/stable
