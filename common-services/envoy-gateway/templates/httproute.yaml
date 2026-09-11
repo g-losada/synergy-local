@@ -1,0 +1,21 @@
+{{- if .Values.gatewayApi.enabled }}
+{{- range .Values.gatewayApi.httpRoutes }}
+{{- if .create }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .name }}
+  namespace: {{ default $.Release.Namespace .namespace }}
+spec:
+  parentRefs:
+    {{- toYaml .parentRefs | nindent 4 }}
+  {{- with .hostnames }}
+  hostnames:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- toYaml .rules | nindent 4 }}
+---
+{{- end }}
+{{- end }}
+{{- end }}

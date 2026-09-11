@@ -1,0 +1,14 @@
+harbor:
+  expose:
+    type: clusterIP
+    tls:
+      enabled: false
+
+  externalURL: https://harbor.synergy.runs.onstackit.cloud
+
+  persistence:
+    enabled: true
+
+  existingSecretAdminPassword: harbor-admin
+  existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
+  harborAdminPassword: ""
