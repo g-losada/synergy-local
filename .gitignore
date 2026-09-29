@@ -33,9 +33,13 @@ repo-secret*.yml
 *.dec.yml
 
 # Helm
-charts/**/charts/
-charts/**/tmpcharts/
-charts/**/.helmignore
+# Subcharts downloaded by `helm dependency build`. NOT versioned: Chart.lock pins
+# the versions and ArgoCD's repo-server resolves them at sync time.
+# (The old "charts/**/charts/" pattern was anchored at the repo root and so never
+# matched <tier>/<service>/charts/.)
+**/charts/*.tgz
+**/tmpcharts/
+**/charts/**/.helmignore
 
 # Helm secrets plugin
 *.yaml.dec
@@ -61,3 +65,14 @@ rendered/
 # Generated kubeconfig
 kubeconfig
 kubeconfig.yaml
+
+.claude
+# Neptune extracts: contain real personal data (affected_user, reported_by, tenant).
+# Anonymise and commit deliberately, or keep them out.
+migration/neptune/responses/*.json
+
+# Local venv for the migration scripts
+migration/scripts/.venv/
+
+__pycache__/
+*.pyc

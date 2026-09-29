@@ -2,7 +2,8 @@ apiVersion: v2
 name: k8ssandra
 description: A wrapper chart for K8ssandra
 type: application
-version: 0.1.0
+version: 0.2.0
+appVersion: "1.30.2"
 
 dependencies:
   - name: k8ssandra-operator

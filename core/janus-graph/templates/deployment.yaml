@@ -1,0 +1,140 @@
+{{- /*
+A Deployment, not a StatefulSet: Gremlin Server is stateless and all graph state
+lives in Cassandra. There is no per-pod identity or per-pod volume to keep.
+
+Configuration does not come from a mounted ConfigMap: the official image's
+docker-entrypoint.sh copies a properties template into JANUS_CONFIG_DIR and then
+rewrites it from env vars prefixed "janusgraph." (and "gremlinserver." via yq).
+Mounting a ConfigMap on that directory makes it read-only and breaks startup.
+*/ -}}
+{{- $timeout := .Values.storage.timeoutSeconds | int -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "janus-graph.fullname" . }}
+  labels:
+    {{- include "janus-graph.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "janus-graph.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "janus-graph.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "janus-graph.serviceAccountName" . }}
+      # JanusGraph does not talk to the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: janusgraph
+          image: {{ include "janus-graph.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: gremlin
+              containerPort: 8182
+              protocol: TCP
+          env:
+            # Properties template the entrypoint uses as its base.
+            - name: JANUS_PROPS_TEMPLATE
+              value: {{ if .Values.index.enabled }}cql-es{{ else }}cql{{ end }}
+            # The entrypoint polls the backend until it can open the graph, before
+            # starting the server. Replaces a wait-for initContainer and avoids
+            # CrashLoopBackOff while Cassandra bootstraps.
+            - name: JANUS_STORAGE_TIMEOUT
+              value: {{ $timeout | quote }}
+            # Overrides the -Xms4096m/-Xmx4096m from the image's conf/jvm-11.options.
+            - name: JAVA_OPTIONS
+              value: {{ printf "-Xms%s -Xmx%s %s" .Values.jvm.heapSize .Values.jvm.heapSize .Values.jvm.extraOptions | trim | quote }}
+
+            - name: janusgraph.storage.backend
+              value: cql
+            - name: janusgraph.storage.hostname
+              value: {{ .Values.storage.host | quote }}
+            - name: janusgraph.storage.port
+              value: {{ .Values.storage.port | quote }}
+            - name: janusgraph.storage.cql.keyspace
+              value: {{ .Values.storage.keyspace | quote }}
+            # Required by the CQL driver: JanusGraph will not start without it.
+            - name: janusgraph.storage.cql.local-datacenter
+              value: {{ .Values.storage.localDatacenter | quote }}
+            - name: janusgraph.storage.cql.replication-factor
+              value: {{ .Values.storage.replicationFactor | quote }}
+            - name: janusgraph.storage.username
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.storage.credentialsSecret.name }}
+                  key: {{ .Values.storage.credentialsSecret.usernameKey }}
+            - name: janusgraph.storage.password
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.storage.credentialsSecret.name }}
+                  key: {{ .Values.storage.credentialsSecret.passwordKey }}
+            {{- if .Values.index.enabled }}
+            - name: janusgraph.index.search.backend
+              value: {{ .Values.index.backend | quote }}
+            - name: janusgraph.index.search.hostname
+              value: {{ required "index.hostname is required when index.enabled=true" .Values.index.hostname | quote }}
+            {{- end }}
+
+            # Rewrite janusgraph-server.yaml via yq. The image default for host is
+            # localhost, which would make the pod unreachable through the Service.
+            - name: gremlinserver.host
+              value: "0.0.0.0"
+            - name: gremlinserver.threadPoolWorker
+              value: {{ .Values.gremlinServer.threadPoolWorker | quote }}
+            - name: gremlinserver.gremlinPool
+              value: {{ .Values.gremlinServer.gremlinPool | quote }}
+          startupProbe:
+            tcpSocket:
+              port: gremlin
+            periodSeconds: 10
+            # Covers the wait for storage plus Gremlin Server startup.
+            failureThreshold: {{ div (add $timeout 180) 10 }}
+          readinessProbe:
+            tcpSocket:
+              port: gremlin
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: gremlin
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            # The entrypoint generates janusgraph.properties and janusgraph-server.yaml here.
+            - name: config
+              mountPath: /etc/opt/janusgraph
+            - name: data
+              mountPath: /var/lib/janusgraph
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          emptyDir:
+            sizeLimit: 8Mi
+        - name: data
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

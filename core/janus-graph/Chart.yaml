@@ -1,5 +1,9 @@
 apiVersion: v2
 name: janus-graph
-description: A wrapper chart for JanusGraph
+description: A wrapper chart for JanusGraph (Gremlin Server) backed by K8ssandra/Cassandra
 type: application
-version: 0.1.0
+version: 0.2.0
+appVersion: "1.1.0"
+
+# No dependencies: the upstream janusgraph/helm-charts repo is archived and there
+# is no maintained community chart. The manifests live in templates/.

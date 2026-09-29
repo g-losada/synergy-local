@@ -1,0 +1,10 @@
+# Pinned to the server's TinkerPop version, not to "latest".
+#
+# JanusGraph 1.1.0 ships TinkerPop 3.7.3. gremlinpython 3.8.x compiles
+# iterate() into a discard() step that a 3.7 server rejects with
+#   Could not locate method: DefaultGraphTraversal.discard()
+#
+# Check the server before changing this:
+#   kubectl -n janus-graph exec deploy/janus-graph -- \
+#     ls /opt/janusgraph/lib/ | grep gremlin-core
+gremlinpython==3.7.3

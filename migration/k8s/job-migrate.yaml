@@ -1,0 +1,166 @@
+# Full-volume migration Job for SKE.
+#
+# Runs the same migrate.groovy as the local path, but in its own pod with its own
+# resource budget, so a large load does not compete with the Gremlin Server's
+# memory limit inside the serving pod.
+#
+# Not a Helm chart: the storage settings below are literals and must match
+# core/janus-graph/values.yaml. Kept out of the chart deliberately — a migration
+# is a one-off operation, not part of the desired state ArgoCD reconciles.
+#
+# Before applying:
+#
+#   kubectl -n janus-graph create configmap migrate-script \
+#     --from-file=migrate.groovy=migration/scripts/migrate.groovy
+#
+#   kubectl -n janus-graph create secret generic migration-s3 \
+#     --from-literal=AWS_ACCESS_KEY_ID=... \
+#     --from-literal=AWS_SECRET_ACCESS_KEY=...
+#
+# The input reader is the open item here: migrate.groovy reads Neptune's
+# openCypher JSON, while neptune-export writes CSV. Either keep the openCypher
+# route with pagination (same format, nothing new to build), or add a CSV reader
+# to migrate.groovy. Decide from the node/edge counts before committing to the
+# heavier path -- see the SKE section of ../README.md.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: neptune-migration
+  namespace: janus-graph
+spec:
+  backoffLimit: 0          # a partial load must be inspected, never blindly retried
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: neptune-migration
+        app.kubernetes.io/part-of: synergy-core
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+
+      initContainers:
+        - name: fetch-export
+          image: public.ecr.aws/aws-cli/aws-cli:2.17.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - aws s3 sync "$S3_SOURCE" /data --only-show-errors && ls -la /data
+          env:
+            - name: S3_SOURCE
+              value: "s3://CHANGE-ME/neptune-export/"
+            - name: AWS_REGION
+              value: "eu-central-1"
+          envFrom:
+            - secretRef:
+                name: migration-s3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+
+      containers:
+        - name: migrate
+          image: docker.io/janusgraph/janusgraph:1.1.0@sha256:75f57aff4b152ca86b4cdaeefb5335154d7fad412cffef75fa44c7504adc96d4
+          command: ["/bin/bash", "-c"]
+          args:
+            # `show-config` makes the image's own entrypoint generate
+            # janusgraph.properties from the env vars below, then exits. Reusing
+            # it keeps this Job's connection settings identical to the server's.
+            - |
+              set -e
+              docker-entrypoint.sh janusgraph show-config > /dev/null
+              exec bin/gremlin.sh -e /scripts/migrate.groovy
+          env:
+            - name: JANUS_PROPS_TEMPLATE
+              value: cql
+            # Overrides the image's -Xms4096m/-Xmx4096m; keep below limits.memory.
+            - name: JAVA_OPTIONS
+              value: "-Xms1g -Xmx3g"
+
+            - name: PHASE
+              value: "all"            # schema | load | verify | all
+            - name: EXTRACT_JSON
+              value: /data/extract.json
+            - name: BATCH_SIZE
+              value: "1000"
+            - name: BATCH_LOADING
+              value: "true"           # initial load into an empty graph only
+
+            - name: janusgraph.storage.backend
+              value: cql
+            - name: janusgraph.storage.hostname
+              value: graph-cassandra-dc1-service.k8ssandra.svc.cluster.local
+            - name: janusgraph.storage.port
+              value: "9042"
+            - name: janusgraph.storage.cql.keyspace
+              value: janusgraph
+            - name: janusgraph.storage.cql.local-datacenter
+              value: dc1
+            - name: janusgraph.storage.cql.replication-factor
+              value: "3"
+            - name: janusgraph.storage.username
+              valueFrom:
+                secretKeyRef:
+                  name: cassandra-cql-credentials
+                  key: username
+            - name: janusgraph.storage.password
+              valueFrom:
+                secretKeyRef:
+                  name: cassandra-cql-credentials
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # Same deviation as the server: the entrypoint writes the generated
+            # properties into JANUS_CONFIG_DIR, which is an emptyDir below.
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: "1"
+              memory: 4Gi
+            limits:
+              memory: 4Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+              readOnly: true
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: config
+              mountPath: /etc/opt/janusgraph
+            - name: janus-data
+              mountPath: /var/lib/janusgraph
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: 20Gi     # must hold the whole export; raise for big graphs
+        - name: scripts
+          configMap:
+            name: migrate-script
+        - name: config
+          emptyDir:
+            sizeLimit: 8Mi
+        - name: janus-data
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
