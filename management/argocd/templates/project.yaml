@@ -1,9 +1,17 @@
+{{- if .Values.project.create }}
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 
 metadata:
   name: {{ .Values.project.name }}
-  namespace: {{ .Values.argocd.namespace }}
+  namespace: {{ .Values.project.namespace }}
+  annotations:
+    # The argo-cd subchart (wave 0) installs the argoproj.io CRDs; this CR cannot
+    # be applied before they exist.
+    argocd.argoproj.io/sync-wave: "1"
+    # On the first sync the CRD is not registered yet and ArgoCD's dry-run fails.
+    # Same treatment as the K8ssandraCluster CR in core/k8ssandra.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 
 spec:
   description: {{ .Values.project.description | quote }}
@@ -19,3 +27,4 @@ spec:
 
   namespaceResourceWhitelist:
 {{- toYaml .Values.project.namespaceResourceWhitelist | nindent 4 }}
+{{- end }}

@@ -1,0 +1,211 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "authentik-demo.fullname" . }}-api
+  labels:
+    {{- include "authentik-demo.labels" . | nindent 4 }}
+data:
+  api.py: |
+    """Resource server for the authentik evaluation.
+
+    This is the piece that matters for the Cognito migration. It mirrors what an
+    API Gateway plus Lambda authorizer does today: take the bearer token off the
+    request, verify its signature against the issuer's published JWKS, then
+    authorise from the "groups" claim.
+
+    Nothing here is authentik-specific. It is plain OIDC, and the only thing that
+    changes when moving off Cognito is the issuer URL — the verification code and
+    the claim it reads are identical. That is the single most useful finding of
+    the evaluation.
+
+    Authorization lives here and not in the browser. The SPA hides buttons a user
+    may not use, which is a courtesy, not a control: anyone can call these
+    endpoints directly with curl. Only this file decides.
+    """
+
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    import jwt
+    from jwt import PyJWKClient
+
+    # The issuer is used for one thing only: comparing the "iss" claim. That is a
+    # string comparison and never a request, which is why it can be the
+    # browser-facing URL even though this pod cannot route to it.
+    #
+    # Exactly one trailing slash, because authentik issues "iss" with one.
+    ISSUER = os.environ["OIDC_ISSUER"].rstrip("/") + "/"
+
+    # The keys, by contrast, do have to be fetched, so this is a separate setting
+    # pointing at the in-cluster Service. Decoupling the two is what makes a
+    # split-horizon setup work: external URL in the token, internal URL for the
+    # metadata. Same keys either way — the JWKS is public by design.
+    JWKS_URL = os.environ["OIDC_JWKS_URL"]
+
+    AUDIENCE = os.environ["OIDC_CLIENT_ID"]
+    VERIFY_AUD = os.environ.get("OIDC_VERIFY_AUDIENCE", "true").lower() == "true"
+    ROLE_ADMIN = os.environ["ROLE_ADMIN"]
+    ROLE_READONLY = os.environ["ROLE_READONLY"]
+    PORT = int(os.environ.get("PORT", "8000"))
+
+    # Caches the signing keys and refetches when an unknown "kid" shows up, so a
+    # key rotation in authentik needs no restart here.
+    JWKS = PyJWKClient(JWKS_URL)
+
+
+    def verify(header):
+        """Return (claims, None) for a good token, or (None, reason)."""
+        if not header or not header.lower().startswith("bearer "):
+            return None, "missing or malformed Authorization header"
+        token = header.split(None, 1)[1]
+        try:
+            key = JWKS.get_signing_key_from_jwt(token).key
+            claims = jwt.decode(
+                token,
+                key,
+                # Pinned. Accepting whatever the token's own header asks for is
+                # how you get algorithm-confusion attacks.
+                algorithms=["RS256"],
+                issuer=ISSUER,
+                audience=AUDIENCE if VERIFY_AUD else None,
+                options={"verify_aud": VERIFY_AUD, "require": ["exp", "iat", "iss"]},
+            )
+            return claims, None
+        except Exception as exc:
+            return None, f"{type(exc).__name__}: {exc}"
+
+
+    def roles_of(claims):
+        groups = claims.get("groups") or []
+        return {
+            "groups": groups,
+            "admin": ROLE_ADMIN in groups,
+            "readonly": ROLE_READONLY in groups,
+        }
+
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def _send(self, code, payload):
+            body = json.dumps(payload, indent=2).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _authenticated(self):
+            """401 and None when the token is absent or invalid."""
+            claims, err = verify(self.headers.get("Authorization"))
+            if err:
+                self._send(401, {"error": "unauthenticated", "detail": err})
+                return None
+            return claims
+
+        def _require(self, claims, allowed):
+            """403 and False when the token carries none of the allowed groups."""
+            groups = claims.get("groups") or []
+            if not any(g in groups for g in allowed):
+                self._send(
+                    403,
+                    {
+                        "error": "forbidden",
+                        "detail": "none of the required groups are present on the token",
+                        "required_any_of": allowed,
+                        "groups_on_token": groups,
+                    },
+                )
+                return False
+            return True
+
+        def do_GET(self):
+            path = self.path.split("?", 1)[0].rstrip("/") or "/"
+
+            # Unauthenticated: lets the SPA and a human confirm the API is up and
+            # which issuer it trusts, without a token.
+            if path == "/api/health":
+                return self._send(
+                    200,
+                    {
+                        "status": "ok",
+                        "issuer_expected": ISSUER,
+                        "jwks_url": JWKS_URL,
+                        "verify_audience": VERIFY_AUD,
+                    },
+                )
+
+            # Any valid token. Echoes the claims so the three login paths can be
+            # compared side by side.
+            if path == "/api/me":
+                claims = self._authenticated()
+                if claims is None:
+                    return
+                return self._send(
+                    200,
+                    {
+                        "subject": claims.get("sub"),
+                        "username": claims.get("preferred_username"),
+                        "email": claims.get("email"),
+                        "name": claims.get("name"),
+                        "roles": roles_of(claims),
+                        "issuer": claims.get("iss"),
+                        "audience": claims.get("aud"),
+                        "expires_at": claims.get("exp"),
+                    },
+                )
+
+            # Read access: either role.
+            if path == "/api/data":
+                claims = self._authenticated()
+                if claims is None:
+                    return
+                if not self._require(claims, [ROLE_ADMIN, ROLE_READONLY]):
+                    return
+                return self._send(
+                    200,
+                    {
+                        "records": [
+                            {"id": 1, "name": "Synergy record A", "sensitivity": "low"},
+                            {"id": 2, "name": "Synergy record B", "sensitivity": "low"},
+                        ],
+                        "read_by": claims.get("preferred_username"),
+                    },
+                )
+
+            return self._send(404, {"error": "not_found", "path": path})
+
+        def do_POST(self):
+            path = self.path.split("?", 1)[0].rstrip("/") or "/"
+
+            # Write access: admin only. A readonly user reaching this gets 403
+            # even though the SPA never shows them the button.
+            if path == "/api/admin":
+                claims = self._authenticated()
+                if claims is None:
+                    return
+                if not self._require(claims, [ROLE_ADMIN]):
+                    return
+                return self._send(
+                    200,
+                    {
+                        "result": "administrative action accepted",
+                        "performed_by": claims.get("preferred_username"),
+                    },
+                )
+
+            return self._send(404, {"error": "not_found", "path": path})
+
+        def log_message(self, fmt, *args):
+            print("api %s" % (fmt % args), flush=True)
+
+
+    if __name__ == "__main__":
+        print(
+            f"resource server listening on :{PORT} | issuer={ISSUER} "
+            f"| audience={'checked' if VERIFY_AUD else 'NOT checked'}",
+            flush=True,
+        )
+        ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

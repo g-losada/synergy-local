@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "authentik-demo.fullname" . }}
+  labels:
+    {{- include "authentik-demo.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePort }}
+      # Fixed so the redirect URI registered in authentik keeps matching. Must
+      # not collide with authentik's own 30080/30443 on the same node.
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
+  selector:
+    {{- include "authentik-demo.selectorLabels" . | nindent 4 }}

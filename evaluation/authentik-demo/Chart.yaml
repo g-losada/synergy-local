@@ -1,0 +1,14 @@
+apiVersion: v2
+name: authentik-demo
+description: Evaluation app proving application authentication against authentik
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+# No dependencies: everything is hand-written manifests in templates/.
+#
+# This chart lives under evaluation/ rather than one of the GitOps tiers on
+# purpose. No ApplicationSet globs this directory and there is no config.yaml, so
+# it is never reconciled or deployed to SKE by accident — the same reasoning as
+# migration/, which is deliberately outside the desired state ArgoCD reconciles.
+# It is an evaluation artefact, installed by hand on minikube.

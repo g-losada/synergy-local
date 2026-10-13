@@ -1,0 +1,271 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "authentik-demo.fullname" . }}-spa
+  labels:
+    {{- include "authentik-demo.labels" . | nindent 4 }}
+data:
+  # Rendered by Helm so the OIDC settings are not duplicated in the JavaScript.
+  # None of these are secrets: a public client has no client_secret, which is the
+  # whole point of PKCE.
+  config.js: |
+    window.SYNERGY_CONFIG = {
+      issuer: {{ include "authentik-demo.issuer" . | quote }},
+      clientId: {{ .Values.oidc.clientId | quote }},
+      scopes: {{ .Values.oidc.scopes | quote }},
+      roles: {
+        admin: {{ .Values.roles.admin | quote }},
+        readonly: {{ .Values.roles.readonly | quote }}
+      }
+    };
+
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Synergy Demo</title>
+      <style>
+        :root {
+          --bg: #ffffff; --fg: #1a1a1a; --muted: #5c5c5c;
+          --line: #e0e0e0; --card: #f7f7f7;
+          --ok: #1a7f37; --warn: #9a6700; --err: #b42318; --accent: #2d5bd7;
+        }
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --bg: #16181c; --fg: #ececec; --muted: #9a9a9a;
+            --line: #2c2f36; --card: #1e2127;
+            --ok: #3fb950; --warn: #d29922; --err: #f85149; --accent: #6b93ff;
+          }
+        }
+        * { box-sizing: border-box; }
+        body {
+          margin: 0; padding: 24px 16px; background: var(--bg); color: var(--fg);
+          font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+        main { max-width: 760px; margin: 0 auto; }
+        h1 { font-size: 22px; margin: 0 0 4px; }
+        h2 { font-size: 15px; margin: 24px 0 8px; text-transform: uppercase;
+             letter-spacing: .06em; color: var(--muted); }
+        p.sub { margin: 0 0 24px; color: var(--muted); }
+        .card { background: var(--card); border: 1px solid var(--line);
+                border-radius: 8px; padding: 16px; }
+        button {
+          font: inherit; padding: 8px 14px; border-radius: 6px; cursor: pointer;
+          border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+        }
+        button:hover:not(:disabled) { border-color: var(--accent); }
+        button:disabled { opacity: .45; cursor: not-allowed; }
+        button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+        dt { color: var(--muted); }
+        dd { margin: 0; font-variant-numeric: tabular-nums; word-break: break-all; }
+        .tag { display: inline-block; padding: 1px 8px; border-radius: 999px;
+               border: 1px solid var(--line); font-size: 13px; }
+        .tag.admin { color: var(--ok); border-color: var(--ok); }
+        .tag.readonly { color: var(--warn); border-color: var(--warn); }
+        .tag.none { color: var(--err); border-color: var(--err); }
+        pre { margin: 8px 0 0; padding: 12px; overflow: auto; max-height: 300px;
+              background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+              font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+        .status { font-size: 13px; color: var(--muted); }
+        .status.ok { color: var(--ok); } .status.err { color: var(--err); }
+        .hint { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+        [hidden] { display: none !important; }
+      </style>
+    </head>
+    <body>
+    <main>
+      <h1>Synergy Demo</h1>
+      <p class="sub">Application authentication against authentik, evaluated as a
+        replacement for AWS Cognito.</p>
+
+      <!-- Signed out -->
+      <section id="anon" hidden>
+        <div class="card">
+          <div class="row">
+            <button class="primary" id="login">Sign in with authentik</button>
+            <span class="status" id="anon-status"></span>
+          </div>
+          <p class="hint">Authorization Code with PKCE. The browser holds no
+            client secret.</p>
+        </div>
+      </section>
+
+      <!-- Signed in -->
+      <section id="auth" hidden>
+        <h2>Identity</h2>
+        <div class="card">
+          <dl>
+            <dt>User</dt><dd id="c-user">—</dd>
+            <dt>Email</dt><dd id="c-email">—</dd>
+            <dt>Groups</dt><dd id="c-groups">—</dd>
+            <dt>Role here</dt><dd id="c-role">—</dd>
+            <dt>Issuer</dt><dd id="c-iss">—</dd>
+          </dl>
+        </div>
+
+        <h2>Calls to the protected API</h2>
+        <div class="card">
+          <div class="row">
+            <button id="call-me">GET /api/me</button>
+            <button id="call-data">GET /api/data</button>
+            <button id="call-admin">POST /api/admin</button>
+            <button id="logout">Sign out</button>
+          </div>
+          <p class="hint" id="api-hint"></p>
+          <div class="status" id="api-status"></div>
+          <pre id="api-out" hidden></pre>
+        </div>
+
+        <h2>Access token claims</h2>
+        <div class="card">
+          <pre id="claims"></pre>
+          <p class="hint">The API verifies this token's signature against the
+            issuer's JWKS and authorises from <code>groups</code>. Buttons hidden
+            above are still reachable with curl — only the API decides.</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/oidc-client-ts@3.3.0/dist/browser/oidc-client-ts.min.js"></script>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+    </body>
+    </html>
+
+  app.js: |
+    // Authorization Code + PKCE against authentik. The token handling here ports
+    // directly to React when the real product pages are migrated: only the
+    // rendering changes, not the flow.
+    (function () {
+      "use strict";
+
+      var cfg = window.SYNERGY_CONFIG;
+      var origin = window.location.origin + "/";
+
+      var mgr = new oidc.UserManager({
+        authority: cfg.issuer,
+        client_id: cfg.clientId,
+        redirect_uri: origin,
+        post_logout_redirect_uri: origin,
+        response_type: "code",     // PKCE is applied automatically for "code"
+        scope: cfg.scopes,
+        // Survives a page reload. sessionStorage would be a little safer and
+        // loses the session per tab; a real app should weigh that.
+        userStore: new oidc.WebStorageStateStore({ store: window.localStorage }),
+        // No refresh token: "offline_access" is not among the requested scopes,
+        // so the session ends when the access token expires.
+        automaticSilentRenew: false
+      });
+
+      var $ = function (id) { return document.getElementById(id); };
+
+      function decodeJwtPayload(token) {
+        try {
+          var part = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+          var json = decodeURIComponent(
+            atob(part).split("").map(function (c) {
+              return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join("")
+          );
+          return JSON.parse(json);
+        } catch (e) {
+          return { error: "could not decode token payload: " + e.message };
+        }
+      }
+
+      function roleOf(groups) {
+        if (groups.indexOf(cfg.roles.admin) !== -1) return "admin";
+        if (groups.indexOf(cfg.roles.readonly) !== -1) return "readonly";
+        return "none";
+      }
+
+      function render(user) {
+        var claims = decodeJwtPayload(user.access_token);
+        var groups = claims.groups || [];
+        var role = roleOf(groups);
+
+        $("c-user").textContent = claims.preferred_username || claims.sub || "—";
+        $("c-email").textContent = claims.email || "—";
+        $("c-groups").textContent = groups.length ? groups.join(", ") : "(none)";
+        $("c-role").innerHTML = '<span class="tag ' + role + '">' + role + "</span>";
+        $("c-iss").textContent = claims.iss || "—";
+        $("claims").textContent = JSON.stringify(claims, null, 2);
+
+        // Hiding these is presentation, not protection. The API enforces.
+        $("call-data").disabled = role === "none";
+        $("call-admin").disabled = false;
+        $("api-hint").textContent =
+          role === "admin"
+            ? "As an admin, all three calls should succeed."
+            : role === "readonly"
+            ? "As a readonly user, /api/admin returns 403 — try it with curl."
+            : "No matching group: /api/data and /api/admin both return 403.";
+
+        $("anon").hidden = true;
+        $("auth").hidden = false;
+      }
+
+      function showAnon(message) {
+        $("anon-status").textContent = message || "";
+        $("anon-status").className = message ? "status err" : "status";
+        $("anon").hidden = false;
+        $("auth").hidden = true;
+      }
+
+      async function call(method, path) {
+        var user = await mgr.getUser();
+        if (!user) { return showAnon("Session expired. Sign in again."); }
+        $("api-status").textContent = method + " " + path + " …";
+        $("api-status").className = "status";
+        try {
+          var res = await fetch(path, {
+            method: method,
+            headers: { Authorization: "Bearer " + user.access_token }
+          });
+          var body = await res.text();
+          try { body = JSON.stringify(JSON.parse(body), null, 2); } catch (e) {}
+          $("api-status").textContent = "HTTP " + res.status + " " + res.statusText;
+          $("api-status").className = "status " + (res.ok ? "ok" : "err");
+          $("api-out").textContent = body;
+          $("api-out").hidden = false;
+        } catch (e) {
+          $("api-status").textContent = "request failed: " + e.message;
+          $("api-status").className = "status err";
+        }
+      }
+
+      $("login").addEventListener("click", function () {
+        mgr.signinRedirect().catch(function (e) { showAnon(e.message); });
+      });
+      $("logout").addEventListener("click", function () {
+        mgr.signoutRedirect().catch(function () { mgr.removeUser().then(function () {
+          window.location.replace(origin);
+        }); });
+      });
+      $("call-me").addEventListener("click", function () { call("GET", "/api/me"); });
+      $("call-data").addEventListener("click", function () { call("GET", "/api/data"); });
+      $("call-admin").addEventListener("click", function () { call("POST", "/api/admin"); });
+
+      (async function start() {
+        // authentik redirects back to this same page with ?code=…; handle it,
+        // then strip the query so a reload does not replay a spent code.
+        var params = new URLSearchParams(window.location.search);
+        if (params.has("code") || params.has("error")) {
+          try {
+            var user = await mgr.signinRedirectCallback();
+            window.history.replaceState({}, document.title, origin);
+            return render(user);
+          } catch (e) {
+            window.history.replaceState({}, document.title, origin);
+            return showAnon("Sign-in failed: " + e.message);
+          }
+        }
+        var existing = await mgr.getUser();
+        if (existing && !existing.expired) { return render(existing); }
+        showAnon();
+      })();
+    })();

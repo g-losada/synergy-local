@@ -1,0 +1,223 @@
+# Local profile (minikube). See values-ske.yaml for the StackIT SKE overrides.
+#
+# Helm global. It has to live at the top level of this file, not under the
+# "authentik:" key, because Helm only propagates the root "global" map down the
+# chart tree. The Bitnami PostgreSQL subchart sits two levels deep
+# (authentik -> postgresql) and refuses to start unless it is allowed to run an
+# image other than Bitnami's own: the upstream chart points PostgreSQL at the
+# official docker.io/library/postgres image, which Bitnami considers "insecure".
+global:
+  security:
+    allowInsecureImages: true
+
+# Our own values, consumed by templates/demo-blueprint-configmap.yaml.
+#
+# The identity model and the OAuth2 registration for the evaluation app in
+# evaluation/authentik-demo. Three things have to agree between this file and
+# that chart's values.yaml, or the login fails:
+#
+#   clientId          -> demo app's oidc.clientId
+#   slug              -> the issuer, http://<authentik>/application/o/<slug>/
+#   redirectUris      -> the URL the browser is actually served from
+#   groups[].name     -> the group names the demo API checks
+#
+# A mismatch shows up as redirect_uri_mismatch (URIs), an issuer validation
+# error (slug), or a silent 403 for everyone (group names).
+demoApp:
+  create: true
+  configMapName: authentik-demo-blueprint
+
+  providerName: synergy-demo
+  applicationName: Synergy Demo
+  slug: synergy-demo
+
+  # Public client: there is no clientSecret, by design. A browser cannot keep
+  # one, so the SPA authorises with PKCE instead. This is also what removes the
+  # main reason to hide these values — there is no secret here to leak.
+  clientId: synergy-demo
+
+  # Only what the SPA actually uses. refresh_token would additionally be needed
+  # to keep a session alive past the access token's lifetime, which also requires
+  # adding the "offline_access" scope below.
+  grantTypes:
+    - authorization_code
+
+  # Must match where the BROWSER is served from, exactly and to the character.
+  #
+  # localhost through `kubectl port-forward`, not the minikube node IP: on WSL2
+  # in the default NAT mode the node sits on a docker bridge inside the Linux VM,
+  # which a browser on the Windows host has no route to. WSL2 does forward
+  # localhost into the VM, so a port-forward works from a Windows browser, from
+  # inside WSL and from a Linux desktop alike. See README.md for the commands.
+  redirectUris:
+    - http://localhost:9100/
+  logoutRedirectUris:
+    - http://localhost:9100/
+
+  launchUrl: http://localhost:9100/
+
+  # Implicit consent: the consent screen adds a click per user without teaching
+  # anything the login flow does not already show. The visible flow being
+  # evaluated is default-authentication-flow, the login itself. Switch to
+  # default-provider-authorization-explicit-consent to see a consent stage.
+  authorizationFlow: default-provider-authorization-implicit-consent
+
+  # default-provider-invalidation-flow, the usual default for an
+  # application-initiated logout, deliberately carries no user_logout stage: it
+  # ends only that application's session and leaves the authentik session alive,
+  # so the next /application/o/authorize/ hands out a code without asking for
+  # credentials. That is correct SSO behaviour in general and wrong here, where
+  # the point is to demonstrate signing out. default-invalidation-flow is the
+  # stock flow that does carry the stage, so RP-initiated logout also terminates
+  # the authentik session. See README.md section 7.
+  invalidationFlow: default-invalidation-flow
+
+  # Ships with every authentik instance. Required here — see the template.
+  signingKey: authentik Self-signed Certificate
+
+  # "profile" is what carries the groups claim; see the template.
+  scopes:
+    - openid
+    - profile
+    - email
+
+  # The two roles the demo app understands. A user in neither is refused by the
+  # PolicyBinding before the app ever sees a token.
+  groups:
+    - name: synergy-admins
+      attributes:
+        synergy_role: admin
+    - name: synergy-readonly
+      attributes:
+        synergy_role: readonly
+
+# Values for the upstream chart. The key is the dependency name in Chart.yaml.
+authentik:
+  # The upstream chart's own configuration block. Every key here is flattened
+  # into AUTHENTIK_<KEY>__<SUBKEY> environment variables and base64-encoded into
+  # a single Secret, so "postgresql.password" below becomes
+  # AUTHENTIK_POSTGRESQL__PASSWORD. Do not confuse it with the "postgresql:" key
+  # further down, which configures the PostgreSQL subchart itself.
+  authentik:
+    log_level: info
+
+    # Signs cookies and derives unique user IDs. Changing it invalidates every
+    # session. Upstream recommends 50 characters.
+    # DEV ONLY. Do not use outside local minikube.
+    secret_key: "devonly-changeme-authentik-secret-key-not-secure00"
+
+    error_reporting:
+      enabled: false
+
+    postgresql:
+      # Service rendered by the PostgreSQL subchart. Templated rather than
+      # hardcoded so it survives a different release name; the chart runs every
+      # value in this block through tpl before encoding it.
+      host: "{{ .Release.Name }}-postgresql"
+      name: authentik
+      user: authentik
+      # DEV ONLY. Must match postgresql.auth.password below.
+      password: "devonly-changeme"
+
+  server:
+    replicas: 1
+
+    # A single way in matters more than convenience here: authentik builds the
+    # issuer from the incoming Host header, so every hostname you can reach it
+    # by produces a DIFFERENT "iss" in the token. Two entry points would mean two
+    # issuers, and a token minted through one is rejected by a client expecting
+    # the other.
+    #
+    # The one hostname is the Service's own in-cluster FQDN,
+    # authentik-server.authentik.svc.cluster.local:9000, because that is the only
+    # string that can be made to resolve from BOTH sides without extra DNS
+    # plumbing:
+    #
+    #   in-cluster  CoreDNS resolves it natively to this Service
+    #   browser     one line in the Windows hosts file points it at 127.0.0.1,
+    #               and `kubectl port-forward ... 9000:9000` serves it there
+    #
+    # Argo CD forces this. Unlike a plain resource server it cannot be told to
+    # compare the "iss" claim against one URL while fetching metadata from
+    # another: argocd-server does OIDC discovery itself and hands the browser the
+    # authorization_endpoint it found. So the issuer has to be one URL, reachable
+    # from the pod and from the browser alike.
+    service:
+      type: ClusterIP
+      # 9000, not the chart default of 80, so the port in that one URL is valid
+      # in-cluster too. It is also authentik's own container port, which makes
+      # the URLs in the upstream documentation line up.
+      servicePortHttp: 9000
+
+    # Gateway API HTTPRoute. The upstream chart renders it natively
+    # (templates/server/route.yaml), so this chart carries no route template of
+    # its own. Disabled locally: there is no Envoy Gateway on minikube. See
+    # values-ske.yaml.
+    route:
+      main:
+        enabled: false
+
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+
+  worker:
+    replicas: 1
+
+    # Skips the interactive out-of-box experience at /if/flow/initial-setup/ and
+    # makes the deployment reproducible from scratch. Read by the worker only,
+    # and only on the very first startup against an empty database: changing
+    # them later has no effect, you have to reset the password in the UI.
+    env:
+      - name: AUTHENTIK_BOOTSTRAP_EMAIL
+        value: "akadmin@synergy.local"
+      # DEV ONLY. Do not use outside local minikube.
+      - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+        value: "devonly-changeme"
+
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        # The worker runs blueprint reconciliation and background tasks and is
+        # the heavier of the two processes.
+        memory: 2Gi
+
+  # PostgreSQL subchart (Bitnami 18.8.17), bundled inside the upstream chart's
+  # package. Disabled by default upstream; authentik cannot run without it.
+  postgresql:
+    enabled: true
+    auth:
+      username: authentik
+      database: authentik
+      # DEV ONLY. Must match authentik.postgresql.password above.
+      password: "devonly-changeme"
+    primary:
+      persistence:
+        enabled: true
+        size: 8Gi
+        storageClass: standard   # minikube hostpath; see values-ske.yaml for SKE
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          memory: 1Gi
+
+  # Declarative authentik objects mounted from ConfigMaps and reconciled by the
+  # worker. Only keys ending in .yaml are discovered. The ConfigMap itself is
+  # rendered by templates/demo-blueprint-configmap.yaml in this chart; the name
+  # must match demoApp.configMapName above.
+  blueprints:
+    configMaps:
+      - authentik-demo-blueprint
+    secrets: []
+
+  # No Prometheus in this cluster yet.
+  prometheus:
+    rules:
+      enabled: false

@@ -1,0 +1,112 @@
+# Local profile (minikube). There is no values-ske.yaml: this app is an
+# evaluation artefact and is never deployed to SKE.
+
+replicaCount: 1
+
+# Must agree with demoApp in management/authentik/values.yaml. A mismatch shows
+# up as redirect_uri_mismatch (URIs), an issuer validation failure (slug), or a
+# 403 for every user (group names).
+oidc:
+  # What the BROWSER sees, and therefore the exact string authentik stamps into
+  # the token's "iss" claim — it builds the issuer from the incoming Host header.
+  # The SPA fetches the discovery document from here, so it has to be reachable
+  # from the browser.
+  #
+  # The Service's own in-cluster FQDN, reached from the browser through one line
+  # in the Windows hosts file plus `kubectl port-forward ... 9000:9000`. It looks
+  # odd in an address bar, and it is the one hostname that resolves correctly
+  # from both sides with no extra DNS plumbing: CoreDNS already knows it.
+  #
+  # This app did not need that — it compares "iss" as a string and fetches keys
+  # from jwksUrl below, so plain localhost worked. Argo CD does need it, because
+  # argocd-server does OIDC discovery itself and cannot be told to use two
+  # different URLs. Sharing one issuer across every client is simpler than
+  # running two, so this app follows.
+  issuer: http://authentik-server.authentik.svc.cluster.local:9000/application/o/synergy-demo/
+
+  # Where the API fetches the signing keys. Kept as a separate setting from the
+  # issuer above even though both now point at the same host, because the two are
+  # answering different questions:
+  #
+  #   issuer   compared against the token's "iss" claim   (string, no network)
+  #   jwksUrl  fetched to get the public keys             (network, from this pod)
+  #
+  # Only the second has to be routable from here. Keeping the knob means this app
+  # still works if the browser-facing URL ever stops being reachable from inside
+  # the cluster — which is the norm wherever internal and external DNS differ,
+  # and was the case before the issuer was unified.
+  jwksUrl: http://authentik-server.authentik.svc.cluster.local:9000/application/o/synergy-demo/jwks/
+
+  # Public client. There is no secret here by design: a browser cannot keep one,
+  # so the SPA uses Authorization Code + PKCE.
+  clientId: synergy-demo
+
+  scopes: openid profile email
+
+  # authentik sets "aud" on the access token to the client ID. Set to false only
+  # to diagnose an InvalidAudienceError.
+  verifyAudience: true
+
+# authentik group names, mapped to what this application lets you do. This is
+# the application-side half of the authorization model: authentik only asserts
+# membership, the API below decides what membership is worth.
+roles:
+  admin: synergy-admins
+  readonly: synergy-readonly
+
+spa:
+  image:
+    # Unprivileged variant: listens on 8080 and runs as uid 101, so the pod can
+    # enforce runAsNonRoot without patching the image.
+    repository: docker.io/nginxinc/nginx-unprivileged
+    tag: "1.29-alpine"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+api:
+  image:
+    repository: docker.io/library/python
+    tag: "3.13-slim"
+    pullPolicy: IfNotPresent
+  port: 8000
+  # DEMO ONLY. The container installs PyJWT at startup instead of shipping a
+  # built image, because this cluster has no image build pipeline and no local
+  # registry (Harbor is not installed). Costs ~20s of startup and needs egress
+  # from the pod. A real deployment builds an image with the dependency baked in.
+  pipPackages: "PyJWT[crypto]==2.10.1"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+service:
+  # One Service for both containers: nginx serves the SPA at / and
+  # reverse-proxies /api/ to the API over localhost inside the pod. Same origin,
+  # so there is no CORS to configure — and it is closer to how the real pages are
+  # served.
+  #
+  # ClusterIP, reached with `kubectl port-forward ... 9100:8080`. That local 9100
+  # is not arbitrary: it is what is registered as the redirect URI in authentik,
+  # and a strict redirect URI has to match to the character.
+  type: ClusterIP
+  port: 8080
+
+serviceAccount:
+  create: true
+  name: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
