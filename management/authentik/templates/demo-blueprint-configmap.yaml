@@ -1,0 +1,154 @@
+{{- if .Values.demoApp.create }}
+{{- $d := .Values.demoApp }}
+# Declarative authentik objects for the evaluation demo app in
+# evaluation/authentik-demo. Everything the identity provider needs to know
+# about that application lives here; the application itself only needs the
+# client_id, the issuer and the group names.
+#
+# The chart mounts this ConfigMap at /blueprints/mounted/cm-<name> on both the
+# server and the worker; the worker discovers every key ending in .yaml and
+# reconciles it in a single atomic transaction.
+#
+# Why this is declared here and not in the demo chart: this chart owns the
+# blueprints mount (authentik.blueprints.configMaps below), and "who may
+# authenticate against what" is an identity-provider concern. The coupling is
+# one-directional and documented on both sides.
+#
+# This chart deliberately has no _helpers.tpl. Helm template names are global
+# across a release, and this wrapper shares its name with the upstream chart, so
+# a define of "authentik.labels" here would silently override the subchart's own.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $d.configMapName }}
+  labels:
+    helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: blueprint
+    app.kubernetes.io/part-of: synergy-management
+data:
+  demo.yaml: |
+    version: 1
+    metadata:
+      name: synergy-demo
+      labels:
+        blueprints.goauthentik.io/description: |
+          Identity model and OAuth2 registration for the Synergy evaluation demo.
+          Managed by management/authentik in the synergy-local repository.
+    entries:
+      # ---------------------------------------------------------------- groups
+      # Layer 1 of three: membership only. These groups say nothing about what a
+      # member may do — the demo API decides that, by reading the "groups" claim
+      # off the access token. That is the same federated-authorization shape as
+      # Cognito's cognito:groups claim.
+      {{- range $d.groups }}
+      - model: authentik_core.group
+        id: group-{{ .name }}
+        identifiers:
+          name: {{ .name | quote }}
+        attrs:
+          # Layer 2 would be this flag and authentik Roles: permissions over
+          # authentik ITSELF. Never what we want for an application role.
+          is_superuser: false
+          {{- with .attributes }}
+          attributes:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- end }}
+
+      # -------------------------------------------------------------- provider
+      # The OAuth2/OIDC provider. In Cognito terms, the App Client.
+      - model: authentik_providers_oauth2.oauth2provider
+        id: provider-demo
+        identifiers:
+          name: {{ $d.providerName | quote }}
+        attrs:
+          # A browser SPA cannot keep a secret, so this is a public client and
+          # authorises with PKCE instead of a client_secret.
+          client_type: public
+          client_id: {{ $d.clientId | quote }}
+
+          # Not optional, and easy to miss: this field defaults to an EMPTY list
+          # when the provider is created from a blueprint, whereas the UI
+          # pre-selects the usual grants for you. An empty list allows nothing,
+          # and /application/o/authorize/ then answers
+          #   error=invalid_request "The request is otherwise malformed"
+          # with "Invalid grant_type for provider" in the server log — which
+          # says nothing about grant types from the client's side.
+          grant_types:
+            {{- range $d.grantTypes }}
+            - {{ . }}
+            {{- end }}
+
+          # !Find references an object this blueprint does not own. These flows
+          # ship with every authentik instance; we are linking, not creating.
+          authorization_flow: !Find [authentik_flows.flow, [slug, {{ $d.authorizationFlow }}]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, {{ $d.invalidationFlow }}]]
+
+          # Load-bearing, not optional. Without a signing key authentik signs
+          # tokens HS256 using the client secret — and a public client has no
+          # usable secret, so the demo API could never verify them. With a key
+          # the tokens are RS256 and verifiable through the JWKS endpoint.
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, {{ $d.signingKey | quote }}]]
+
+          # The stock "profile" mapping already emits
+          #   "groups": [group.name for group in request.user.groups.all()]
+          # which is exactly what the demo API reads. No custom property mapping
+          # is needed; this is the Cognito equivalent of cognito:groups.
+          property_mappings:
+            {{- range $d.scopes }}
+            - !Find [authentik_providers_oauth2.scopemapping, [scope_name, {{ . }}]]
+            {{- end }}
+
+          # Pre-registered return addresses. Without this allowlist an attacker
+          # could craft &redirect_uri=http://evil/ and authentik would hand them
+          # the authorization code. "strict" means an exact string match.
+          redirect_uris:
+            {{- range $d.redirectUris }}
+            - matching_mode: strict
+              redirect_uri_type: authorization
+              url: {{ . | quote }}
+            {{- end }}
+            {{- range $d.logoutRedirectUris }}
+            - matching_mode: strict
+              redirect_uri_type: logout
+              url: {{ . | quote }}
+            {{- end }}
+
+      # ----------------------------------------------------------- application
+      # The user-facing shell. Its slug is load-bearing: the OIDC issuer
+      # authentik publishes is <authentik-url>/application/o/<slug>/, and the SPA
+      # and API both derive discovery and JWKS from that string.
+      - model: authentik_core.application
+        id: app-demo
+        identifiers:
+          slug: {{ $d.slug | quote }}
+        attrs:
+          name: {{ $d.applicationName | quote }}
+          provider: !KeyOf provider-demo
+          meta_launch_url: {{ $d.launchUrl | quote }}
+          meta_description: "Evaluation app for the Cognito to authentik migration."
+          # "any" rather than "all": the bindings below are alternatives, so
+          # membership of EITHER group grants access. With "all" a user would
+          # have to be in both.
+          policy_engine_mode: any
+
+      # -------------------------------------------------------- access control
+      # Restricts who may reach the application at all. This is the other place
+      # access can be denied, and it is the stronger of the two: a user outside
+      # both groups authenticates successfully but is refused here, so the demo
+      # app never receives a token for them. The API's own 403 is the weaker,
+      # in-application check.
+      {{- range $i, $g := $d.groups }}
+      - model: authentik_policies.policybinding
+        identifiers:
+          target: !KeyOf app-demo
+          group: !KeyOf group-{{ $g.name }}
+          order: {{ $i }}
+        attrs:
+          enabled: true
+      {{- end }}
+{{- end }}

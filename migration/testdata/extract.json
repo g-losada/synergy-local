@@ -1,0 +1,233 @@
+{
+ "results": [
+  {
+   "i": {
+    "~id": "a1b2c3d40000000000000000000001",
+    "~entityType": "node",
+    "~labels": [
+     "Incident"
+    ],
+    "~properties": {
+     "reference_number": "INC0000001",
+     "category": "Danos",
+     "status": "Registered",
+     "active": "1",
+     "latitude": "0",
+     "longitude": "0",
+     "open_date": "2022-09-28T13:10:56.000Z",
+     "description": "",
+     "priority": "5 - Low"
+    }
+   },
+   "r1": {
+    "~id": "e001",
+    "~entityType": "relationship",
+    "~type": "Incident has City Service",
+    "~start": "a1b2c3d40000000000000000000001",
+    "~end": "901138940b5000000000000000000a",
+    "~properties": {}
+   },
+   "item": {
+    "~id": "901138940b5000000000000000000a",
+    "~entityType": "node",
+    "~labels": [
+     "Item"
+    ],
+    "~properties": {
+     "name": "Off-Street Parking",
+     "sys_class_name": "cmdb_ci_service"
+    }
+   },
+   "r2": {
+    "~id": "e002",
+    "~entityType": "relationship",
+    "~type": "Parking Access Control Supports Off-street Parking::Off-Street Parking is supported by Parking Access Control",
+    "~start": "6c1178940b5200000000000000000d",
+    "~end": "901138940b5000000000000000000a",
+    "~properties": {}
+   },
+   "nb": {
+    "~id": "6c1178940b5200000000000000000d",
+    "~entityType": "node",
+    "~labels": [
+     "Item"
+    ],
+    "~properties": {
+     "name": "Parking Access Control",
+     "sys_class_name": "cmdb_ci_appl"
+    }
+   }
+  },
+  {
+   "i": {
+    "~id": "a1b2c3d40000000000000000000001",
+    "~entityType": "node",
+    "~labels": [
+     "Incident"
+    ],
+    "~properties": {
+     "reference_number": "INC0000001",
+     "category": "Danos",
+     "status": "Registered",
+     "active": "1",
+     "latitude": "0",
+     "longitude": "0",
+     "open_date": "2022-09-28T13:10:56.000Z",
+     "description": "",
+     "priority": "5 - Low"
+    }
+   },
+   "r1": {
+    "~id": "e001",
+    "~entityType": "relationship",
+    "~type": "Incident has City Service",
+    "~start": "a1b2c3d40000000000000000000001",
+    "~end": "901138940b5000000000000000000a",
+    "~properties": {}
+   },
+   "item": {
+    "~id": "901138940b5000000000000000000a",
+    "~entityType": "node",
+    "~labels": [
+     "Item"
+    ],
+    "~properties": {
+     "name": "Off-Street Parking",
+     "sys_class_name": "cmdb_ci_service"
+    }
+   },
+   "r2": {
+    "~id": "e003",
+    "~entityType": "relationship",
+    "~type": "Parking Access Control Supports Off-street Parking::Off-Street Parking is supported by Parking Access Control",
+    "~start": "901138940b5000000000000000000a",
+    "~end": "806da8900b5000000000000000000b",
+    "~properties": {}
+   },
+   "nb": {
+    "~id": "806da8900b5000000000000000000b",
+    "~entityType": "node",
+    "~labels": [
+     "Item"
+    ],
+    "~properties": {
+     "name": "Parking Lot B",
+     "sys_class_name": "cmdb_ci_facility"
+    }
+   }
+  },
+  {
+   "i": {
+    "~id": "a1b2c3d40000000000000000000001",
+    "~entityType": "node",
+    "~labels": [
+     "Incident"
+    ],
+    "~properties": {
+     "reference_number": "INC0000001",
+     "category": "Danos",
+     "status": "Registered",
+     "active": "1",
+     "latitude": "0",
+     "longitude": "0",
+     "open_date": "2022-09-28T13:10:56.000Z",
+     "description": "",
+     "priority": "5 - Low"
+    }
+   },
+   "r1": {
+    "~id": "e001",
+    "~entityType": "relationship",
+    "~type": "Incident has City Service",
+    "~start": "a1b2c3d40000000000000000000001",
+    "~end": "901138940b5000000000000000000a",
+    "~properties": {}
+   },
+   "item": {
+    "~id": "901138940b5000000000000000000a",
+    "~entityType": "node",
+    "~labels": [
+     "Item"
+    ],
+    "~properties": {
+     "name": "Off-Street Parking",
+     "sys_class_name": "cmdb_ci_service"
+    }
+   },
+   "r2": {
+    "~id": "e004",
+    "~entityType": "relationship",
+    "~type": "License Plate Reader is assigned to Parking Access Control::Parking Access Control has assigned License Plate Reader",
+    "~start": "8c6da8900b5000000000000000000c",
+    "~end": "6c1178940b5200000000000000000d",
+    "~properties": {}
+   },
+   "nb": {
+    "~id": "8c6da8900b5000000000000000000c",
+    "~entityType": "node",
+    "~labels": [
+     "Item"
+    ],
+    "~properties": {
+     "name": "License Plate Reader 14",
+     "sys_class_name": "cmdb_ci_hardware"
+    }
+   }
+  },
+  {
+   "i": {
+    "~id": "a1b2c3d40000000000000000000002",
+    "~entityType": "node",
+    "~labels": [
+     "Incident"
+    ],
+    "~properties": {
+     "reference_number": "INC0000002",
+     "category": "Queixa",
+     "status": "Registered",
+     "active": "1",
+     "latitude": "0",
+     "longitude": "0",
+     "open_date": "2022-09-28T13:10:56.000Z",
+     "description": "",
+     "priority": "5 - Low"
+    }
+   },
+   "r1": null,
+   "item": null,
+   "r2": null,
+   "nb": null
+  },
+  {
+   "i": {
+    "~id": "a1b2c3d40000000000000000000002",
+    "~entityType": "node",
+    "~labels": [
+     "Incident"
+    ],
+    "~properties": {
+     "reference_number": "INC0000002",
+     "category": "Queixa",
+     "status": "Registered",
+     "active": "1",
+     "latitude": "0",
+     "longitude": "0",
+     "open_date": "2022-09-28T13:10:56.000Z",
+     "description": "",
+     "priority": "5 - Low"
+    }
+   },
+   "r1": {
+    "~id": "e005",
+    "~entityType": "relationship",
+    "~type": "Incident generated incident",
+    "~start": "a1b2c3d40000000000000000000002",
+    "~end": "a1b2c3d400000000000000000fffff",
+    "~properties": {}
+   },
+   "item": null,
+   "r2": null,
+   "nb": null
+  }
+ ]
+}

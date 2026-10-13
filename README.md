@@ -1,2 +1,0 @@
-# synergy-k8s
-

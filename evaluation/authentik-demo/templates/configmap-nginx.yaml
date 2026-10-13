@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "authentik-demo.fullname" . }}-nginx
+  labels:
+    {{- include "authentik-demo.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    # One origin for both halves of the app: static files at / and the resource
+    # server under /api/. That removes CORS from the picture entirely — no
+    # preflight, no Access-Control headers to get wrong — and matches how the
+    # real pages are served.
+    server {
+        # 8080, not 80: the unprivileged nginx image runs as uid 101 and cannot
+        # bind a privileged port.
+        listen {{ .Values.service.port }};
+        server_name _;
+
+        root /usr/share/nginx/html;
+        index index.html;
+
+        # No caching of the shell or its config. config.js carries the issuer and
+        # client ID, and a stale copy after a redeploy is a confusing failure.
+        location = /index.html { add_header Cache-Control "no-store" always; }
+        location = /config.js  { add_header Cache-Control "no-store" always; }
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+
+        # No trailing slash on proxy_pass, so the /api prefix is preserved and
+        # the resource server sees the path it routes on.
+        location /api/ {
+            proxy_pass http://127.0.0.1:{{ .Values.api.port }};
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }

@@ -1,0 +1,42 @@
+# Overrides for StackIT SKE.
+#
+# Not wired into ArgoCD yet (the ApplicationSet template does not pass
+# valueFiles). Until then, apply with:
+#   helm ... -f values.yaml -f values-ske.yaml
+
+replicaCount: 2
+
+storage:
+  replicationFactor: 3
+  # The cassandra-cql-credentials Secret is materialised in this namespace by the
+  # ExternalSecret in common-services/external-secrets, with the same keys.
+  # The storage.credentialsSecret block does not change.
+
+index:
+  enabled: false   # enable once there is Elasticsearch in the cluster
+  # backend: elasticsearch
+  # hostname: elasticsearch.elastic.svc.cluster.local
+
+httpRoute:
+  enabled: true
+  parentRefName: envoy-gateway
+  parentRefNamespace: envoy-gateway
+  hostnames:
+    - janusgraph.synergy.runs.onstackit.cloud
+  # No ReferenceGrant is needed for the cross-namespace parentRef: the Gateway's
+  # listeners already set allowedRoutes.namespaces.from=All
+  # (common-services/envoy-gateway/values.yaml).
+  #
+  # TODO: add this hostname to certificate.dnsNames in
+  # common-services/cert-manager/values.yaml, otherwise the HTTPS listener serves
+  # gateway-cert without a matching SAN.
+
+jvm:
+  heapSize: 4g
+
+resources:
+  requests:
+    cpu: "1"
+    memory: 8Gi
+  limits:
+    memory: 8Gi   # >= jvm.heapSize * 2

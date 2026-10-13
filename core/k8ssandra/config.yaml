@@ -1,0 +1,3 @@
+appName: k8ssandra
+sourcePath: core/k8ssandra
+destinationNamespace: k8ssandra

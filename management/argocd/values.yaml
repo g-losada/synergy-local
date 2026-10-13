@@ -1,4 +1,11 @@
 project:
+  # Set to false for the first phase of a plain-Helm install: the argoproj.io
+  # CRDs ship with the argo-cd subchart, so on an empty cluster this CR has no
+  # kind to bind to yet. Through ArgoCD the sync-wave and
+  # SkipDryRunOnMissingResource annotations on the template handle it instead.
+  # See the bring-up procedure in README.md.
+  create: true
+
   name: platform
   namespace: argocd
   description: Platform services
@@ -19,30 +26,91 @@ project:
       kind: "*"
 
 
-argocd:
+argo-cd:
   global:
     domain: argocd.synergy.runs.onstackit.cloud
 
   configs:
     params:
-    server.insecure: "true"
-  #  cm:
-  #    url: https://argocd.dev-dttsynergy.com
-  #    oidc.config: |
-  #      name: Keycloak
-  #      issuer: https://keycloak.dev-dttsynergy.com/realms/master
-  #      clientID: argocd
-  #    clientSecret: $oidc.keycloak.clientSecret        
-  #    requestedScopes:
-  #      - openid
-  #      - profile
-  #      - email
-  #      - groups
-  #
-  #  rbac:
-  #    policy.default: role:readonly
-  #    policy.csv: |
-  #      g, ArgoCDAdmins, role:admin
+      server.insecure: "true"
+    cm:
+      resource.customizations.health.k8ssandra.io_K8ssandraCluster: |
+        hs = {}
+        if obj.status ~= nil and obj.status.conditions ~= nil then
+          for i, condition in ipairs(obj.status.conditions) do
+            if condition.type == "Ready" and condition.status == "True" then
+              hs.status = "Healthy"
+              hs.message = "Cluster is ready"
+              return hs
+            end
+          end
+        end
+        hs.status = "Progressing"
+        hs.message = "Waiting for Cassandra datacenter to become ready"
+        return hs
+
+      # Where the browser reaches Argo CD. Local profile: ClusterIP plus
+      # `kubectl port-forward ... 9200:80`. This one does NOT have to be
+      # resolvable inside the cluster — it is only ever used to build redirect
+      # URLs for the browser.
+      url: http://localhost:9200
+
+      # SSO against authentik, direct OIDC with no Dex (see dex.enabled below).
+      #
+      # The issuer is authentik's in-cluster Service FQDN, and that is forced by
+      # Argo CD rather than chosen: argocd-server performs OIDC discovery itself
+      # and then hands the browser the authorization_endpoint it found. Unlike a
+      # plain resource server it cannot compare "iss" against one URL while
+      # fetching metadata from another, so this single string has to resolve
+      # from the pod AND from the browser. CoreDNS answers it in-cluster for
+      # free; outside, one line in the Windows hosts file points it at 127.0.0.1
+      # where the port-forward is listening. See evaluation/README.md.
+      #
+      # The trailing slash is required: it is exactly what authentik publishes
+      # as "iss", and Argo CD compares the claim as a string.
+      oidc.config: |
+        name: authentik
+        issuer: http://authentik-server.authentik.svc.cluster.local:9000/application/o/argocd/
+        clientID: argocd
+        clientSecret: $oidc.authentik.clientSecret
+        requestedScopes:
+          - openid
+          - profile
+          - email
+
+      # Note there is no "groups" scope. authentik has none — the stock "profile"
+      # mapping is what emits the groups claim, and the provider puts it in the
+      # ID token because include_claims_in_id_token defaults to true. That is
+      # where Argo CD reads it from, so enableUserInfoGroups is not needed.
+
+    rbac:
+      # Anyone who authenticates but matches no line below gets read-only.
+      policy.default: role:readonly
+
+      # Maps authentik group NAMES to Argo CD roles. Deliberately reusing the two
+      # groups the evaluation already has rather than creating Argo CD-specific
+      # ones: it demonstrates the point of the model, that one group name means
+      # whatever each consuming application decides it means. A real deployment
+      # would use dedicated groups, because "can administer the Synergy app" and
+      # "can administer the delivery pipeline" are not the same authority.
+      #
+      # Renaming a group in authentik silently breaks these lines, and group
+      # membership is only re-evaluated at login.
+      policy.csv: |
+        g, synergy-admins, role:admin
+        g, synergy-readonly, role:readonly
+
+    secret:
+      # Resolves the $oidc.authentik.clientSecret reference above out of the
+      # argocd-secret Secret.
+      #
+      # DEV ONLY. Do not use outside local minikube. Must be set to this exact
+      # string on the provider in authentik, overwriting the random one the UI
+      # generates, so this file stays reproducible. On SKE this comes from an
+      # ExternalSecret instead and never lives in git.
+      extra:
+        oidc.authentik.clientSecret: "devonly-changeme-argocd-client-secret"
+
   server:
     replicas: 1
     ingress:
@@ -89,14 +157,15 @@ argocd:
         cpu: 25m
         memory: 64Mi
 
+  # Off: SSO goes straight to authentik through configs.cm."oidc.config" above.
+  #
+  # Dex is the path authentik's own documentation takes, and it works, but it is
+  # a second OIDC hop for no gain here: it would need insecureEnableGroups to
+  # pass the groups claim through, its callback path differs
+  # (/api/dex/callback instead of /auth/callback), and it is one more pod. Direct
+  # OIDC also matches the commented Keycloak block this chart already carried.
   dex:
-    enabled: true
-    replicas: 1
-    
-    resources:
-      requests:
-        cpu: 50m
-        memory: 64Mi
+    enabled: false
 
 
   redis:

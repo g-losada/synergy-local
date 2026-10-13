@@ -1,0 +1,32 @@
+# Overrides for StackIT SKE.
+#
+# Not wired into ArgoCD yet: the ApplicationSet template does not pass
+# valueFiles. Until it does, apply manually with
+#   helm ... -f values.yaml -f values-ske.yaml
+#
+# TODO: confirm the actual StorageClass name on the target SKE cluster before the
+# first deploy (`kubectl get storageclass`). The provisioner is StackIT's Cinder
+# CSI; "standard" only exists on minikube.
+
+cqlCredentials:
+  # The Secret is materialised instead by the ExternalSecret in
+  # common-services/external-secrets, with the same name and the same keys.
+  # No passwords live in this repo on SKE.
+  create: false
+  secretName: cassandra-cql-credentials
+
+cluster:
+  enabled: true
+  datacenters:
+    - name: dc1
+      size: 3
+      storageClassName: premium-perf2-stackit
+      storage: 100Gi
+      heapSize: 4G
+      mgmtAPIHeap: 128Mi
+      resources:
+        requests:
+          cpu: "2"
+          memory: 8Gi
+        limits:
+          memory: 8Gi

@@ -1,0 +1,44 @@
+k8ssandra-operator:
+  replicaCount: 1
+
+# CQL credentials shared between Cassandra and JanusGraph.
+#
+# The operator auto-generates a <cluster>-superuser secret, but only in the
+# K8ssandraCluster's namespace, and JanusGraph runs in a different one. So the
+# superuser is defined here and the same Secret is rendered into both
+# namespaces, referenced by the CR via superuserSecretRef.
+#
+# On SKE: create -> false, and an ExternalSecret materialises a Secret with the
+# same name and the same keys (username/password) from StackIT Secrets Manager.
+# The JanusGraph chart does not change.
+cqlCredentials:
+  create: true
+  secretName: cassandra-cql-credentials
+  username: janusgraph
+  # DEV ONLY. Do not use outside local minikube.
+  password: "devonly-changeme"
+  namespaces:
+    - k8ssandra
+    - janus-graph
+
+cluster:
+  enabled: true
+  name: graph-cassandra
+  serverVersion: "4.1.4"
+
+  # Require authentication on Cassandra. JanusGraph connects with the credentials above.
+  auth: true
+
+  datacenters:
+    - name: dc1
+      size: 1
+      storageClassName: standard   # minikube hostpath; see values-ske.yaml for SKE
+      storage: 5Gi
+      heapSize: 512M
+      mgmtAPIHeap: 64Mi
+      resources:
+        requests:
+          cpu: 500m
+          memory: 2Gi
+        limits:
+          memory: 2Gi

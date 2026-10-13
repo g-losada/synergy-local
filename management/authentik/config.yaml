@@ -1,0 +1,3 @@
+appName: authentik
+sourcePath: management/authentik
+destinationNamespace: authentik

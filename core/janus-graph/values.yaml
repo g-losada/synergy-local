@@ -1,0 +1,100 @@
+replicaCount: 1
+
+image:
+  repository: docker.io/janusgraph/janusgraph
+  tag: "1.1.0"
+  # Manifest list digest for 1.1.0 (2024-11-15). Pinning by digest stops the tag
+  # from being re-pointed without us noticing. To update:
+  #   curl -sL https://hub.docker.com/v2/repositories/janusgraph/janusgraph/tags/<tag>
+  digest: "sha256:75f57aff4b152ca86b4cdaeefb5335154d7fad412cffef75fa44c7504adc96d4"
+  pullPolicy: IfNotPresent
+
+# Connection to the Cassandra cluster from the core/k8ssandra chart.
+#
+# The host is the contact Service that cass-operator creates:
+#   <clusterName>-<dcName>-service.<k8ssandra-namespace>.svc.cluster.local
+# With cluster.name=graph-cassandra and dc1 in the k8ssandra namespace, that gives
+# the value below.
+storage:
+  host: graph-cassandra-dc1-service.k8ssandra.svc.cluster.local
+  port: 9042
+  keyspace: janusgraph
+  localDatacenter: dc1
+  replicationFactor: 1        # SKE -> 3 (see values-ske.yaml)
+  # Seconds the image entrypoint waits for the backend before giving up.
+  # A cold CassandraDatacenter bootstrap takes several minutes.
+  timeoutSeconds: 600
+  credentialsSecret:
+    # Same name/keys that the core/k8ssandra chart writes into the janus-graph
+    # namespace (and that the ExternalSecret provides on SKE).
+    name: cassandra-cql-credentials
+    usernameKey: username
+    passwordKey: password
+
+# Indexing backend. Disabled in phase 1: JanusGraph works with composite indexes
+# only. Enable once there is Elasticsearch in the cluster.
+index:
+  enabled: false
+  backend: elasticsearch
+  hostname: ""
+
+gremlinServer:
+  threadPoolWorker: 1
+  gremlinPool: 8
+
+# The distribution's conf/jvm-11.options ships -Xms4096m -Xmx4096m with
+# -XX:+AlwaysPreTouch, which commits 4 GB right at startup: instant OOMKill under
+# any lower limit. janusgraph-server.sh appends JAVA_OPTIONS AFTER the file's
+# options, so whatever is set here wins.
+#
+# Keep heapSize comfortably below resources.limits.memory: on top of the heap the
+# JVM still needs metaspace, code cache, thread stacks and the CQL driver's direct
+# buffers. Rule of thumb: limit >= heap * 2.
+jvm:
+  heapSize: 1g
+  extraOptions: ""
+
+service:
+  type: ClusterIP
+  port: 8182
+
+# Exposure through Envoy Gateway. Disabled locally (access via port-forward).
+httpRoute:
+  enabled: false
+  parentRefName: envoy-gateway
+  parentRefNamespace: envoy-gateway
+  hostnames: []
+
+serviceAccount:
+  create: true
+  name: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 999              # janusgraph user defined in the official image
+  runAsGroup: 999
+  fsGroup: 999
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  # Deliberate DEVIATION from PSS restricted: the image's docker-entrypoint.sh runs
+  # mkdir/cp/chown/chmod in JANUS_CONFIG_DIR and JANUS_DATA_DIR to generate the
+  # properties from env vars. Both paths are emptyDir (see deployment.yaml), so
+  # nothing is written into the image itself.
+  readOnlyRootFilesystem: false
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 1Gi
+  limits:
+    memory: 2560Mi   # jvm.heapSize (1g) + JVM overhead; see the note on jvm:
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

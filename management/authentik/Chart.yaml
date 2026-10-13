@@ -1,0 +1,17 @@
+apiVersion: v2
+name: authentik
+description: A wrapper chart for authentik, the platform identity provider
+type: application
+version: 0.1.0
+appVersion: "2026.8.3"
+
+icon: https://goauthentik.io/img/icon_top_brand_colour.svg
+
+# authentik 2025.10 removed Redis entirely: caching, the task queue, the embedded
+# outpost's session store and WebSockets all moved to PostgreSQL. This chart
+# therefore has a single data dependency. The PostgreSQL subchart comes bundled
+# with the upstream chart and is enabled through postgresql.enabled in values.yaml.
+dependencies:
+  - name: authentik
+    version: 2026.8.3
+    repository: https://charts.goauthentik.io

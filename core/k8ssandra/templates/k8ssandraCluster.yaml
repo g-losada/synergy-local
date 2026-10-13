@@ -1,0 +1,44 @@
+{{- if .Values.cluster.enabled }}
+apiVersion: k8ssandra.io/v1alpha1
+kind: K8ssandraCluster
+metadata:
+  name: {{ include "k8ssandra.clusterName" . }}
+  labels:
+    {{- include "k8ssandra.labels" . | nindent 4 }}
+  annotations:
+    # The operator (wave 0) must be running and its CRDs installed before this CR.
+    argocd.argoproj.io/sync-wave: "1"
+    # On the first sync the CRD does not exist yet; without this ArgoCD's dry-run fails.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  auth: {{ .Values.cluster.auth }}
+  cassandra:
+    serverVersion: {{ .Values.cluster.serverVersion | quote }}
+    {{- if .Values.cqlCredentials.secretName }}
+    superuserSecretRef:
+      name: {{ .Values.cqlCredentials.secretName }}
+    {{- end }}
+    datacenters:
+      {{- range .Values.cluster.datacenters }}
+      - metadata:
+          name: {{ .name }}
+        size: {{ .size }}
+        storageConfig:
+          cassandraDataVolumeClaimSpec:
+            storageClassName: {{ .storageClassName | default "standard" }}
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: {{ .storage | default "5Gi" }}
+        {{- with .resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        config:
+          jvmOptions:
+            heapSize: {{ .heapSize | default "512M" }}
+        {{- with .mgmtAPIHeap }}
+        mgmtAPIHeap: {{ . }}
+        {{- end }}
+      {{- end }}
+{{- end }}

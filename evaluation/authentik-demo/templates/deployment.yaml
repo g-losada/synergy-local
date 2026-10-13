@@ -1,0 +1,190 @@
+{{- /*
+Two containers in one pod, on purpose: nginx serves the SPA and reverse-proxies
+/api/ to the resource server over localhost. One Service, one origin, no CORS.
+
+Neither container ships a built image — the code is mounted from ConfigMaps and
+the API installs its one dependency at startup. That is a deliberate trade for
+an evaluation artefact in a cluster with no build pipeline and no registry, and
+it is the first thing to change if any of this is kept. See values.yaml.
+*/ -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "authentik-demo.fullname" . }}
+  labels:
+    {{- include "authentik-demo.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "authentik-demo.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "authentik-demo.labels" . | nindent 8 }}
+      annotations:
+        # Roll the pods when any of the mounted code or config changes. Without
+        # this, editing the SPA or the API would need a manual restart.
+        checksum/spa: {{ include (print $.Template.BasePath "/configmap-spa.yaml") . | sha256sum | trunc 16 }}
+        checksum/api: {{ include (print $.Template.BasePath "/configmap-api.yaml") . | sha256sum | trunc 16 }}
+        checksum/nginx: {{ include (print $.Template.BasePath "/configmap-nginx.yaml") . | sha256sum | trunc 16 }}
+    spec:
+      serviceAccountName: {{ include "authentik-demo.serviceAccountName" . }}
+      # This pod never talks to the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+
+      containers:
+        # ------------------------------------------------------------ SPA
+        - name: spa
+          image: "{{ .Values.spa.image.repository }}:{{ .Values.spa.image.tag }}"
+          imagePullPolicy: {{ .Values.spa.image.pullPolicy }}
+          securityContext:
+            # uid baked into the unprivileged nginx image.
+            runAsUser: 101
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: spa
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+            # nginx writes its pid, temp bodies and caches; the root filesystem
+            # is read-only, so every writable path is an explicit emptyDir.
+            - name: nginx-tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+          readinessProbe:
+            httpGet:
+              path: /index.html
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /index.html
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.spa.resources | nindent 12 }}
+
+        # ------------------------------------------------------------ API
+        - name: api
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              echo "installing {{ .Values.api.pipPackages }} into /deps ..."
+              pip install --quiet --no-cache-dir --no-warn-script-location \
+                --target /deps {{ .Values.api.pipPackages }}
+              exec python /app/api.py
+          env:
+            - name: OIDC_ISSUER
+              value: {{ include "authentik-demo.issuer" . | quote }}
+            # Deliberately not derived from OIDC_ISSUER: see values.yaml.
+            - name: OIDC_JWKS_URL
+              value: {{ .Values.oidc.jwksUrl | quote }}
+            - name: OIDC_CLIENT_ID
+              value: {{ .Values.oidc.clientId | quote }}
+            - name: OIDC_VERIFY_AUDIENCE
+              value: {{ .Values.oidc.verifyAudience | quote }}
+            - name: ROLE_ADMIN
+              value: {{ .Values.roles.admin | quote }}
+            - name: ROLE_READONLY
+              value: {{ .Values.roles.readonly | quote }}
+            - name: PORT
+              value: {{ .Values.api.port | quote }}
+            # pip --target puts the package here, so it has to be importable.
+            - name: PYTHONPATH
+              value: /deps
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            # The image's default HOME is not writable under a read-only root.
+            - name: HOME
+              value: /tmp
+          ports:
+            - name: api
+              containerPort: {{ .Values.api.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: api
+              mountPath: /app
+              readOnly: true
+            - name: api-deps
+              mountPath: /deps
+            - name: api-tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              # Unauthenticated by design, so the probe needs no token.
+              path: /api/health
+              port: api
+            # Sized for the pip install, not for the process start.
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: api
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+
+      volumes:
+        - name: spa
+          configMap:
+            name: {{ include "authentik-demo.fullname" . }}-spa
+        - name: nginx-conf
+          configMap:
+            name: {{ include "authentik-demo.fullname" . }}-nginx
+        - name: api
+          configMap:
+            name: {{ include "authentik-demo.fullname" . }}-api
+        - name: nginx-tmp
+          emptyDir:
+            sizeLimit: 32Mi
+        - name: nginx-cache
+          emptyDir:
+            sizeLimit: 32Mi
+        - name: api-deps
+          emptyDir:
+            sizeLimit: 128Mi
+        - name: api-tmp
+          emptyDir:
+            sizeLimit: 32Mi
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
