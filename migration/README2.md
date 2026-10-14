@@ -13,8 +13,19 @@ bootstrap/          "app-of-apps" Application pointing at applicationsets/
 applicationsets/    One ApplicationSet per tier; they generate the Applications
 core/               Data services: k8ssandra (Cassandra), janus-graph
 common-services/    cert-manager, envoy-gateway, external-secrets
-management/         argocd, harbor
+management/         argocd, authentik, harbor
+docs/               Platform documentation
+evaluation/         Proof-of-concept artefacts, deliberately outside GitOps
+migration/          One-off data migration work, also outside GitOps
 ```
+
+`evaluation/` and `migration/` are matched by no ApplicationSet and contain no
+`config.yaml`, so nothing in them is reconciled or deployed by accident. That is
+deliberate: they hold one-off work, not desired state.
+
+Identity — authentik as the AWS Cognito replacement, the authentication and
+authorization model, the user and group management model, and the Argo CD and
+StackIT plans — is documented in [docs/identity.md](../docs/identity.md).
 
 The tier order is not arbitrary: **`common-services` must be installed before
 `core`**. k8ssandra's `cass-operator` subchart aborts rendering if it cannot find
